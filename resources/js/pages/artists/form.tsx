@@ -47,12 +47,13 @@ export default function ArtistForm({ artist, labels, contractTypes }: Props) {
         { title: isEditing ? 'Modifier' : 'Ajouter', href: '#' },
     ];
 
-    const { data, setData, post, put, processing, errors } = useForm({
+    const { data, setData, post, processing, errors } = useForm({
         name: artist?.name ?? '',
         label_id: artist?.label_id?.toString() ?? '',
         contract_type: artist?.contract_type ?? '60_40',
         bio: artist?.bio ?? '',
         image: null as File | null,
+        _method: isEditing ? 'put' : ('post' as string),
     });
 
     const handleFile = (file: File | null) => {
@@ -68,11 +69,8 @@ export default function ArtistForm({ artist, labels, contractTypes }: Props) {
 
     const submit: FormEventHandler = (e) => {
         e.preventDefault();
-        if (isEditing) {
-            put(`/artists/${artist!.id}`, { forceFormData: true });
-        } else {
-            post('/artists', { forceFormData: true });
-        }
+        // Toujours POST + _method spoofing : PHP ne parse pas multipart/form-data en PUT
+        post(isEditing ? `/artists/${artist!.id}` : '/artists', { forceFormData: true });
     };
 
     return (
