@@ -45,7 +45,7 @@ export default function Welcome({ releases, artists, stats }: Props) {
 
     return (
         <>
-            <Head title="ULM Records — San Andreas">
+            <Head title="ULM Records">
                 <link rel="preconnect" href="https://fonts.bunny.net" />
                 <link href="https://fonts.bunny.net/css?family=instrument-sans:400,500,600,700,800,900" rel="stylesheet" />
             </Head>
@@ -107,7 +107,7 @@ export default function Welcome({ releases, artists, stats }: Props) {
 
                         <div className="mb-4 flex items-center justify-center gap-3">
                             <div className="h-px w-12 bg-amber-500/50" />
-                            <span className="text-xs font-semibold tracking-[0.3em] text-amber-500 uppercase">San Andreas · GTA RP</span>
+                            <span className="text-xs font-semibold tracking-[0.3em] text-amber-500 uppercase">Maison de disque indépendante</span>
                             <div className="h-px w-12 bg-amber-500/50" />
                         </div>
 
@@ -116,7 +116,7 @@ export default function Welcome({ releases, artists, stats }: Props) {
                         </h1>
 
                         <p className="mx-auto mb-12 max-w-md text-base leading-relaxed text-zinc-400">
-                            La maison de disque de référence de San Andreas. Artistes signés, productions exclusives, labels indépendants.
+                            La maison de disque de référence. Artistes signés, productions exclusives, labels indépendants.
                         </p>
 
                         {/* Stats */}
@@ -196,7 +196,7 @@ export default function Welcome({ releases, artists, stats }: Props) {
                             <img src="/logo.png" alt="" className="h-5 w-5 object-contain opacity-40" />
                             <span className="text-sm font-bold tracking-widest text-zinc-600 uppercase">ULM Records</span>
                         </div>
-                        <p className="text-xs text-zinc-700">© {new Date().getFullYear()} ULM Records · San Andreas · GTA RP</p>
+                        <p className="text-xs text-zinc-700">© {new Date().getFullYear()} ULM Records</p>
                         {!auth.user && (
                             <Link
                                 href={route('login')}

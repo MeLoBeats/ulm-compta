@@ -1,8 +1,8 @@
 import AppLayout from '@/layouts/app-layout';
 import { type BreadcrumbItem } from '@/types';
 import { Head, useForm } from '@inertiajs/react';
-import { LoaderCircle } from 'lucide-react';
-import { FormEventHandler } from 'react';
+import { LoaderCircle, Upload, X } from 'lucide-react';
+import { FormEventHandler, useRef, useState } from 'react';
 import InputError from '@/components/input-error';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -15,6 +15,7 @@ interface Artist {
     label_id: number | null;
     contract_type: string;
     bio: string | null;
+    image_path: string | null;
 }
 
 interface LabelOption {
@@ -35,6 +36,10 @@ interface Props {
 
 export default function ArtistForm({ artist, labels, contractTypes }: Props) {
     const isEditing = !!artist?.id;
+    const fileInputRef = useRef<HTMLInputElement>(null);
+    const [preview, setPreview] = useState<string | null>(
+        artist?.image_path ? `/storage/${artist.image_path}` : null,
+    );
 
     const breadcrumbs: BreadcrumbItem[] = [
         { title: 'Dashboard', href: '/dashboard' },
@@ -47,22 +52,34 @@ export default function ArtistForm({ artist, labels, contractTypes }: Props) {
         label_id: artist?.label_id?.toString() ?? '',
         contract_type: artist?.contract_type ?? '60_40',
         bio: artist?.bio ?? '',
+        image: null as File | null,
     });
+
+    const handleFile = (file: File | null) => {
+        setData('image', file);
+        if (file) {
+            const reader = new FileReader();
+            reader.onload = (e) => setPreview(e.target?.result as string);
+            reader.readAsDataURL(file);
+        } else {
+            setPreview(artist?.image_path ? `/storage/${artist.image_path}` : null);
+        }
+    };
 
     const submit: FormEventHandler = (e) => {
         e.preventDefault();
         if (isEditing) {
-            put(`/artists/${artist!.id}`);
+            put(`/artists/${artist!.id}`, { forceFormData: true });
         } else {
-            post('/artists');
+            post('/artists', { forceFormData: true });
         }
     };
 
     return (
         <AppLayout breadcrumbs={breadcrumbs}>
-            <Head title={isEditing ? 'Modifier l\'artiste' : 'Ajouter un artiste'} />
+            <Head title={isEditing ? "Modifier l'artiste" : 'Ajouter un artiste'} />
             <div className="flex flex-1 flex-col gap-6 p-6">
-                <h1 className="text-2xl font-bold">{isEditing ? 'Modifier l\'artiste' : 'Ajouter un artiste'}</h1>
+                <h1 className="text-2xl font-bold">{isEditing ? "Modifier l'artiste" : 'Ajouter un artiste'}</h1>
 
                 <form onSubmit={submit} className="max-w-lg space-y-5">
                     <div className="grid gap-2">
@@ -112,6 +129,58 @@ export default function ArtistForm({ artist, labels, contractTypes }: Props) {
                                 {' — Plafond artiste : $45,000'}
                             </p>
                         </div>
+                    </div>
+
+                    {/* Photo */}
+                    <div className="grid gap-2">
+                        <Label>Photo de l'artiste</Label>
+                        <div className="flex items-start gap-4">
+                            <div className="relative h-24 w-24 shrink-0 overflow-hidden rounded-lg border bg-muted">
+                                {preview ? (
+                                    <>
+                                        <img src={preview} alt="Aperçu" className="h-full w-full object-cover" />
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                handleFile(null);
+                                                if (fileInputRef.current) fileInputRef.current.value = '';
+                                            }}
+                                            className="absolute right-1 top-1 rounded-full bg-black/60 p-0.5 text-white hover:bg-black"
+                                        >
+                                            <X className="h-3 w-3" />
+                                        </button>
+                                    </>
+                                ) : (
+                                    <div className="flex h-full w-full items-center justify-center text-muted-foreground">
+                                        <Upload className="h-6 w-6" />
+                                    </div>
+                                )}
+                            </div>
+
+                            <div
+                                className="flex flex-1 cursor-pointer flex-col items-center justify-center rounded-lg border border-dashed px-4 py-6 text-center transition hover:bg-muted/40"
+                                onClick={() => fileInputRef.current?.click()}
+                                onDragOver={(e) => e.preventDefault()}
+                                onDrop={(e) => {
+                                    e.preventDefault();
+                                    const file = e.dataTransfer.files[0];
+                                    if (file) handleFile(file);
+                                }}
+                            >
+                                <Upload className="mb-2 h-5 w-5 text-muted-foreground" />
+                                <p className="text-sm font-medium">Glisser ou cliquer pour uploader</p>
+                                <p className="text-muted-foreground text-xs">PNG, JPG, WEBP — max 2 Mo</p>
+                            </div>
+
+                            <input
+                                ref={fileInputRef}
+                                type="file"
+                                accept="image/*"
+                                className="hidden"
+                                onChange={(e) => handleFile(e.target.files?.[0] ?? null)}
+                            />
+                        </div>
+                        <InputError message={errors.image} />
                     </div>
 
                     <div className="grid gap-2">
