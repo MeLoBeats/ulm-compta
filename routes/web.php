@@ -7,12 +7,10 @@ use App\Http\Controllers\LabelController;
 use App\Http\Controllers\PositionController;
 use App\Http\Controllers\ReleaseController;
 use App\Http\Controllers\SaleController;
+use App\Http\Controllers\WelcomeController;
 use Illuminate\Support\Facades\Route;
-use Inertia\Inertia;
 
-Route::get('/', function () {
-    return Inertia::render('welcome');
-})->name('home');
+Route::get('/', WelcomeController::class)->name('home');
 
 Route::middleware(['auth'])->group(function () {
     Route::get('dashboard', DashboardController::class)->name('dashboard');
