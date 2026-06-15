@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Enums\EmployeeStatus;
+use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
@@ -19,6 +20,8 @@ class Employee extends Model
         'fired_at',
         'weekly_salary',
         'fee_per_release',
+        'rib',
+        'phone',
         'status',
     ];
 
@@ -72,7 +75,7 @@ class Employee extends Model
      * Total contractor earnings for a given week (ISO week string "YYYY-WW").
      * Capped at $45,000.
      */
-    public function weeklyContractorEarnings(?\Carbon\Carbon $weekOf = null): float
+    public function weeklyContractorEarnings(?Carbon $weekOf = null): float
     {
         $weekOf ??= now();
         $fee = (float) ($this->fee_per_release ?? 0);

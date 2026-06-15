@@ -2,7 +2,6 @@
 
 namespace App\Http\Controllers;
 
-use App\Enums\EmployeeStatus;
 use App\Models\Employee;
 use App\Models\Label;
 use App\Models\Position;
@@ -49,6 +48,8 @@ class EmployeeController extends Controller
             'hired_at' => 'required|date',
             'weekly_salary' => 'nullable|numeric|min:0',
             'fee_per_release' => 'nullable|numeric|min:0',
+            'rib' => 'nullable|string|max:50',
+            'phone' => 'nullable|string|max:30',
             'status' => 'required|in:active,inactive',
         ]);
 
@@ -79,6 +80,8 @@ class EmployeeController extends Controller
             'fired_at' => 'nullable|date|after_or_equal:hired_at',
             'weekly_salary' => 'nullable|numeric|min:0',
             'fee_per_release' => 'nullable|numeric|min:0',
+            'rib' => 'nullable|string|max:50',
+            'phone' => 'nullable|string|max:30',
             'status' => 'required|in:active,inactive',
         ]);
 

@@ -18,6 +18,8 @@ interface Employee {
     fired_at: string | null;
     weekly_salary: string | null;
     fee_per_release: string | null;
+    rib: string | null;
+    phone: string | null;
     status: string;
 }
 
@@ -55,6 +57,8 @@ export default function EmployeeForm({ employee, positions, labels }: Props) {
         fired_at: employee?.fired_at ?? '',
         weekly_salary: employee?.weekly_salary ?? '',
         fee_per_release: employee?.fee_per_release ?? '',
+        rib: employee?.rib ?? '',
+        phone: employee?.phone ?? '',
         status: employee?.status ?? 'active',
     });
 
@@ -180,6 +184,30 @@ export default function EmployeeForm({ employee, positions, labels }: Props) {
                                 </SelectContent>
                             </Select>
                             <InputError message={errors.status} />
+                        </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-4">
+                        <div className="grid gap-2">
+                            <Label htmlFor="phone">Numéro de téléphone</Label>
+                            <Input
+                                id="phone"
+                                value={data.phone}
+                                onChange={(e) => setData('phone', e.target.value)}
+                                placeholder="ex: 555-0123"
+                            />
+                            <InputError message={errors.phone} />
+                        </div>
+
+                        <div className="grid gap-2">
+                            <Label htmlFor="rib">RIB</Label>
+                            <Input
+                                id="rib"
+                                value={data.rib}
+                                onChange={(e) => setData('rib', e.target.value)}
+                                placeholder="ex: FR76 1234 5678 9012 3456 7890 123"
+                            />
+                            <InputError message={errors.rib} />
                         </div>
                     </div>
 
