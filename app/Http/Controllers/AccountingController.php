@@ -34,7 +34,7 @@ class AccountingController extends Controller
             ->sum('fee_per_release');
 
         // Entrées manuelles de la semaine
-        $entries = AccountingEntry::where('week_start', $weekStart->toDateString())
+        $entries = AccountingEntry::whereDate('week_start', $weekStart->toDateString())
             ->with('recorder:id,name,username')
             ->orderBy('created_at', 'desc')
             ->get()
