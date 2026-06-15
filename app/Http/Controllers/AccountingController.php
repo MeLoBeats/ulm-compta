@@ -103,13 +103,16 @@ class AccountingController extends Controller
             'recorded_by' => $request->user()->id,
         ]);
 
-        return back()->with('success', 'Entrée ajoutée.');
+        return redirect()->route('accounting.index', ['week' => $validated['week_start']])
+            ->with('success', 'Entrée ajoutée.');
     }
 
     public function destroy(AccountingEntry $accountingEntry): RedirectResponse
     {
+        $weekStart = $accountingEntry->week_start->toDateString();
         $accountingEntry->delete();
 
-        return back()->with('success', 'Entrée supprimée.');
+        return redirect()->route('accounting.index', ['week' => $weekStart])
+            ->with('success', 'Entrée supprimée.');
     }
 }
