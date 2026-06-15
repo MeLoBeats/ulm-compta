@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\AccountingController;
 use App\Http\Controllers\ArtistController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\EmployeeController;
@@ -23,6 +24,10 @@ Route::middleware(['auth'])->group(function () {
 
     Route::post('releases/{release}/sales', [SaleController::class, 'store'])->name('releases.sales.store');
     Route::delete('releases/{release}/sales/{sale}', [SaleController::class, 'destroy'])->name('releases.sales.destroy');
+
+    Route::get('accounting', [AccountingController::class, 'index'])->name('accounting.index');
+    Route::post('accounting', [AccountingController::class, 'store'])->name('accounting.store');
+    Route::delete('accounting/{accountingEntry}', [AccountingController::class, 'destroy'])->name('accounting.destroy');
 });
 
 require __DIR__.'/settings.php';

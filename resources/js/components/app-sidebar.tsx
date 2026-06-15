@@ -4,7 +4,7 @@ import { NavUser } from '@/components/nav-user';
 import { Sidebar, SidebarContent, SidebarFooter, SidebarHeader, SidebarMenu, SidebarMenuButton, SidebarMenuItem } from '@/components/ui/sidebar';
 import { type NavItem } from '@/types';
 import { Link } from '@inertiajs/react';
-import { Disc3, LayoutGrid, Music, Tag, Users } from 'lucide-react';
+import { BookOpen, Disc3, LayoutGrid, Music, Tag, Users } from 'lucide-react';
 import AppLogo from './app-logo';
 
 const mainNavItems: NavItem[] = [
@@ -37,6 +37,11 @@ const mainNavItems: NavItem[] = [
         title: 'Sorties',
         url: '/releases',
         icon: Disc3,
+    },
+    {
+        title: 'Comptabilité',
+        url: '/accounting',
+        icon: BookOpen,
     },
 ];
 
