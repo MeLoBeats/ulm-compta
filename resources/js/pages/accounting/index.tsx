@@ -29,6 +29,8 @@ interface Entry {
 interface Auto {
     sales_revenue: number;
     contractor_costs: number;
+    employee_salaries: number;
+    artist_payments: number;
 }
 
 interface Totals {
@@ -149,7 +151,7 @@ export default function AccountingIndex({ weekStart, weekEnd, weekLabel, prevWee
                     <SummaryCard
                         label="Dépenses déductibles"
                         value={formatMoney(totals.deductible)}
-                        sub={`dont ${formatMoney(auto.contractor_costs)} prestataires`}
+                        sub={`${formatMoney(auto.employee_salaries)} salaires · ${formatMoney(auto.artist_payments)} artistes · ${formatMoney(auto.contractor_costs)} prestataires`}
                         color="red"
                     />
                     <SummaryCard
@@ -190,6 +192,8 @@ export default function AccountingIndex({ weekStart, weekEnd, weekLabel, prevWee
                     activeForm={activeForm}
                     setActiveForm={setActiveForm}
                     autoLines={[
+                        { label: 'Salaires employés (automatique)', amount: auto.employee_salaries },
+                        { label: 'Paiements artistes (automatique)', amount: auto.artist_payments },
                         { label: 'Prestataires (automatique)', amount: auto.contractor_costs },
                     ]}
                 />

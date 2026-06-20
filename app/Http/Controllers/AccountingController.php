@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Enums\EntryType;
 use App\Models\AccountingEntry;
+use App\Models\Employee;
 use App\Models\Release;
 use App\Models\Sale;
 use Carbon\Carbon;
@@ -33,6 +34,14 @@ class AccountingController extends Controller
             ->flatMap(fn ($r) => $r->contractors)
             ->sum('fee_per_release');
 
+        // Salaires employés actifs (non-prestataires)
+        $employeeSalaries = (float) Employee::where('status', 'active')
+            ->whereNotNull('weekly_salary')
+            ->sum('weekly_salary');
+
+        // Paiements artistes : revenus des ventes de la semaine × leur % de contrat (avec plafond $45k)
+        $artistPayments = $this->computeArtistPayments($weekStart->toDateString(), $weekEnd->toDateString());
+
         // Entrées manuelles de la semaine
         $entries = AccountingEntry::whereDate('week_start', $weekStart->toDateString())
             ->with('recorder:id,name,username')
@@ -55,7 +64,7 @@ class AccountingController extends Controller
         $manualNonDeductible = $entries->where('type', 'non_deductible_expense')->sum('amount');
 
         $totalRevenue = $salesRevenue + $manualRevenue;
-        $totalDeductible = $contractorCosts + $manualDeductible;
+        $totalDeductible = $contractorCosts + $employeeSalaries + $artistPayments + $manualDeductible;
         $totalNonDeductible = $manualNonDeductible;
         $netResult = $totalRevenue - $totalDeductible - $totalNonDeductible;
         $taxableIncome = $totalRevenue - $totalDeductible;
@@ -69,6 +78,8 @@ class AccountingController extends Controller
             'isCurrentWeek' => $weekStart->isSameWeek(Carbon::now()),
             'auto' => [
                 'sales_revenue' => $salesRevenue,
+                'employee_salaries' => $employeeSalaries,
+                'artist_payments' => $artistPayments,
                 'contractor_costs' => $contractorCosts,
             ],
             'entries' => $entries->values(),
@@ -85,6 +96,30 @@ class AccountingController extends Controller
                 'non_deductible_expense' => EntryType::NonDeductibleExpense->categories(),
             ],
         ]);
+    }
+
+    private function computeArtistPayments(string $from, string $to): float
+    {
+        $releases = Release::with(['artists'])
+            ->whereHas('sales', fn ($q) => $q->whereBetween('sale_date', [$from, $to]))
+            ->withSum(['sales as weekly_quantity' => fn ($q) => $q->whereBetween('sale_date', [$from, $to])], 'quantity')
+            ->get();
+
+        $total = 0.0;
+
+        foreach ($releases as $release) {
+            $weeklyGross = (float) ($release->weekly_quantity ?? 0) * 700;
+            if ($weeklyGross <= 0 || $release->artists->isEmpty()) {
+                continue;
+            }
+            $grossPerArtist = $weeklyGross / $release->artists->count();
+            foreach ($release->artists as $artist) {
+                $split = $artist->calculateRevenueSplit($grossPerArtist);
+                $total += $split['artist'];
+            }
+        }
+
+        return $total;
     }
 
     public function store(Request $request): RedirectResponse
