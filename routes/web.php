@@ -4,6 +4,7 @@ use App\Http\Controllers\AccountingController;
 use App\Http\Controllers\ArtistController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\EmployeeController;
+use App\Http\Controllers\GraphicWorkController;
 use App\Http\Controllers\LabelController;
 use App\Http\Controllers\PositionController;
 use App\Http\Controllers\ReleaseController;
@@ -28,6 +29,9 @@ Route::middleware(['auth'])->group(function () {
     Route::get('accounting', [AccountingController::class, 'index'])->name('accounting.index');
     Route::post('accounting', [AccountingController::class, 'store'])->name('accounting.store');
     Route::delete('accounting/{accountingEntry}', [AccountingController::class, 'destroy'])->name('accounting.destroy');
+
+    Route::post('graphic-works', [GraphicWorkController::class, 'store'])->name('graphic-works.store');
+    Route::delete('graphic-works/{graphicWork}', [GraphicWorkController::class, 'destroy'])->name('graphic-works.destroy');
 });
 
 require __DIR__.'/settings.php';

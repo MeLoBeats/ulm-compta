@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Enums\EntryType;
 use App\Models\AccountingEntry;
 use App\Models\Employee;
+use App\Models\GraphicWork;
 use App\Models\Release;
 use App\Models\Sale;
 use Carbon\Carbon;
@@ -27,21 +28,21 @@ class AccountingController extends Controller
         $to = $weekEnd->toDateString();
 
         // Revenus auto : ventes de la semaine × $700
-        // whereDate extrait uniquement la partie date pour éviter le problème des heures (date cast stocke 'Y-m-d H:i:s')
+        // whereDate extrait la partie date pour éviter le problème de stockage 'Y-m-d H:i:s' du cast date
         $salesRevenue = (float) Sale::whereDate('sale_date', '>=', $from)
             ->whereDate('sale_date', '<=', $to)
             ->sum('quantity') * 700;
 
-        // Frais prestataires avec détail par personne
-        $contractorDetails = $this->computeContractorDetails($from, $to);
+        // Frais prestataires : releases de la semaine + travaux graphiques, cap $45k/prestataire
+        $contractorDetails = $this->computeContractorDetails($from);
         $contractorCosts = (float) array_sum(array_column($contractorDetails, 'amount'));
 
-        // Salaires employés actifs (somme fixe hebdo)
+        // Salaires employés actifs (somme fixe hebdo, toutes semaines)
         $employeeSalaries = (float) Employee::where('status', 'active')
             ->whereNotNull('weekly_salary')
             ->sum('weekly_salary');
 
-        // Paiements artistes avec détail par artiste
+        // Paiements artistes avec cap $45k/artiste/semaine
         $artistPaymentDetails = $this->computeArtistPaymentDetails($from, $to);
         $artistPayments = (float) array_sum(array_column($artistPaymentDetails, 'amount'));
 
@@ -60,6 +61,33 @@ class AccountingController extends Controller
                 'notes' => $e->notes,
                 'recorded_by' => $e->recorder?->name ?? $e->recorder?->username,
                 'created_at' => $e->created_at->format('d/m H:i'),
+            ]);
+
+        // Travaux graphiques de la semaine (pour affichage)
+        $graphicWorksList = GraphicWork::whereDate('week_start', $from)
+            ->with(['employee:id,name', 'recorder:id,name,username'])
+            ->orderBy('created_at', 'desc')
+            ->get()
+            ->map(fn (GraphicWork $gw) => [
+                'id' => $gw->id,
+                'employee_name' => $gw->employee->name,
+                'work_type' => $gw->work_type,
+                'quantity' => $gw->quantity,
+                'total' => $gw->total,
+                'notes' => $gw->notes,
+                'recorded_by' => $gw->recorder?->name ?? $gw->recorder?->username,
+                'created_at' => $gw->created_at->format('d/m H:i'),
+            ]);
+
+        // Prestataires actifs disponibles pour le formulaire travaux graphiques
+        $graphistesList = Employee::with('position')
+            ->where('status', 'active')
+            ->whereHas('position', fn ($q) => $q->where('is_contractor', true))
+            ->get()
+            ->map(fn (Employee $e) => [
+                'id' => $e->id,
+                'name' => $e->name,
+                'role' => $e->position?->title ?? '—',
             ]);
 
         $manualRevenue = $entries->where('type', 'revenue')->sum('amount');
@@ -88,6 +116,8 @@ class AccountingController extends Controller
                 'contractor_details' => $contractorDetails,
             ],
             'entries' => $entries->values(),
+            'graphicWorks' => $graphicWorksList,
+            'graphistes' => $graphistesList,
             'totals' => [
                 'revenue' => $totalRevenue,
                 'deductible' => $totalDeductible,
@@ -103,29 +133,72 @@ class AccountingController extends Controller
         ]);
     }
 
-    private function computeContractorDetails(string $from, string $to): array
+    /**
+     * Calcule les frais prestataires de la semaine :
+     * releases sorties + travaux graphiques, avec cap $45k par prestataire.
+     */
+    private function computeContractorDetails(string $weekMonday): array
     {
+        $employeeData = [];
+
+        // 1) Fees des releases sorties cette semaine
         $releases = Release::with(['contractors.position'])
-            ->whereDate('release_date', '>=', $from)
-            ->whereDate('release_date', '<=', $to)
+            ->whereDate('release_date', $weekMonday)
             ->get();
 
-        return $releases
-            ->flatMap(fn ($r) => $r->contractors)
-            ->groupBy('id')
-            ->map(fn ($group) => [
-                'name' => $group->first()->name,
-                'role' => $group->first()->position?->title ?? '—',
-                'releases_count' => $group->count(),
-                'amount' => min(
-                    $group->count() * (float) $group->first()->fee_per_release,
-                    45000.0
-                ),
-            ])
-            ->values()
-            ->toArray();
+        foreach ($releases->flatMap(fn ($r) => $r->contractors) as $contractor) {
+            $id = $contractor->id;
+            if (! isset($employeeData[$id])) {
+                $employeeData[$id] = [
+                    'name' => $contractor->name,
+                    'role' => $contractor->position?->title ?? '—',
+                    'releases_count' => 0,
+                    'covers_count' => 0,
+                    'affiches_count' => 0,
+                    'raw' => 0.0,
+                ];
+            }
+            $employeeData[$id]['releases_count']++;
+            $employeeData[$id]['raw'] += (float) $contractor->fee_per_release;
+        }
+
+        // 2) Travaux graphiques de la semaine
+        $graphicWorks = GraphicWork::whereDate('week_start', $weekMonday)
+            ->with('employee.position')
+            ->get();
+
+        foreach ($graphicWorks as $gw) {
+            $id = $gw->employee_id;
+            if (! isset($employeeData[$id])) {
+                $employeeData[$id] = [
+                    'name' => $gw->employee->name,
+                    'role' => $gw->employee->position?->title ?? '—',
+                    'releases_count' => 0,
+                    'covers_count' => 0,
+                    'affiches_count' => 0,
+                    'raw' => 0.0,
+                ];
+            }
+            $price = GraphicWork::PRICES[$gw->work_type] ?? 0;
+            $employeeData[$id][$gw->work_type === 'cover' ? 'covers_count' : 'affiches_count'] += $gw->quantity;
+            $employeeData[$id]['raw'] += $gw->quantity * $price;
+        }
+
+        // 3) Appliquer le plafond $45k par prestataire
+        return array_values(array_map(fn ($e) => [
+            'name' => $e['name'],
+            'role' => $e['role'],
+            'releases_count' => $e['releases_count'],
+            'covers_count' => $e['covers_count'],
+            'affiches_count' => $e['affiches_count'],
+            'amount' => min($e['raw'], 45000.0),
+        ], $employeeData));
     }
 
+    /**
+     * Calcule les paiements artistes de la semaine avec cap $45k/artiste.
+     * Accumule d'abord les parts brutes sur toutes les releases, puis plafonne.
+     */
     private function computeArtistPaymentDetails(string $from, string $to): array
     {
         $releases = Release::with(['artists'])
@@ -133,7 +206,6 @@ class AccountingController extends Controller
             ->withSum(['sales as weekly_quantity' => fn ($q) => $q->whereDate('sale_date', '>=', $from)->whereDate('sale_date', '<=', $to)], 'quantity')
             ->get();
 
-        // Accumulate raw (uncapped) weekly share per artist across all releases
         $artistTotals = [];
 
         foreach ($releases as $release) {
@@ -157,7 +229,6 @@ class AccountingController extends Controller
             }
         }
 
-        // Apply $45k weekly cap once, after accumulating all releases
         return array_values(array_map(fn ($a) => [
             'name' => $a['name'],
             'amount' => min($a['raw'], 45000.0),

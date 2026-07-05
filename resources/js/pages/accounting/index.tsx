@@ -1,13 +1,14 @@
 import AppLayout from '@/layouts/app-layout';
 import { type BreadcrumbItem } from '@/types';
 import { Head, Link, router, useForm, usePage } from '@inertiajs/react';
-import { ChevronLeft, ChevronRight, ChevronDown, LoaderCircle, Trash2, TrendingDown, TrendingUp } from 'lucide-react';
+import { ChevronDown, ChevronLeft, ChevronRight, Image, LoaderCircle, Trash2, TrendingDown, TrendingUp } from 'lucide-react';
 import { FormEventHandler, useState } from 'react';
 import InputError from '@/components/input-error';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Badge } from '@/components/ui/badge';
 
 const breadcrumbs: BreadcrumbItem[] = [
     { title: 'Dashboard', href: '/dashboard' },
@@ -26,11 +27,35 @@ interface Entry {
     created_at: string;
 }
 
+interface GraphicWork {
+    id: number;
+    employee_name: string;
+    work_type: 'cover' | 'affiche';
+    quantity: number;
+    total: number;
+    notes: string | null;
+    recorded_by: string | null;
+    created_at: string;
+}
+
+interface Graphiste {
+    id: number;
+    name: string;
+    role: string;
+}
+
 interface PaymentDetail {
     name: string;
     amount: number;
-    role?: string;
-    releases_count?: number;
+}
+
+interface ContractorDetail {
+    name: string;
+    role: string;
+    releases_count: number;
+    covers_count: number;
+    affiches_count: number;
+    amount: number;
 }
 
 interface Auto {
@@ -39,7 +64,7 @@ interface Auto {
     artist_payments: number;
     artist_payment_details: PaymentDetail[];
     contractor_costs: number;
-    contractor_details: Array<PaymentDetail & { role: string; releases_count: number }>;
+    contractor_details: ContractorDetail[];
 }
 
 interface Totals {
@@ -65,6 +90,8 @@ interface Props {
     isCurrentWeek: boolean;
     auto: Auto;
     entries: Entry[];
+    graphicWorks: GraphicWork[];
+    graphistes: Graphiste[];
     totals: Totals;
     categories: Categories;
 }
@@ -101,11 +128,25 @@ interface AutoLine {
     details?: Array<{ name: string; amount: number }>;
 }
 
+const GRAPHIC_PRICES: Record<string, number> = { cover: 3000, affiche: 5000 };
+const GRAPHIC_LABELS: Record<string, string> = { cover: 'Cover', affiche: 'Affiche' };
+
 function formatMoney(amount: number) {
     return new Intl.NumberFormat('fr-FR', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(amount);
 }
 
-export default function AccountingIndex({ weekStart, weekEnd, weekLabel, prevWeek, nextWeek, isCurrentWeek, auto, entries, totals, categories }: Props) {
+function buildContractorLabel(d: ContractorDetail): string {
+    const parts: string[] = [];
+    if (d.releases_count > 0) parts.push(`×${d.releases_count} son${d.releases_count > 1 ? 's' : ''}`);
+    if (d.covers_count > 0) parts.push(`×${d.covers_count} cover${d.covers_count > 1 ? 's' : ''}`);
+    if (d.affiches_count > 0) parts.push(`×${d.affiches_count} affiche${d.affiches_count > 1 ? 's' : ''}`);
+    return `${d.name} — ${d.role}${parts.length ? ` (${parts.join(' · ')})` : ''}`;
+}
+
+export default function AccountingIndex({
+    weekStart, weekEnd, weekLabel, prevWeek, nextWeek, isCurrentWeek,
+    auto, entries, graphicWorks, graphistes, totals, categories,
+}: Props) {
     const { flash } = usePage<{ flash: { success?: string } }>().props;
     const [activeForm, setActiveForm] = useState<EntryType | null>(null);
 
@@ -116,6 +157,12 @@ export default function AccountingIndex({ weekStart, weekEnd, weekLabel, prevWee
     function deleteEntry(id: number) {
         if (confirm('Supprimer cette entrée ?')) {
             router.delete(`/accounting/${id}`);
+        }
+    }
+
+    function deleteGraphicWork(id: number) {
+        if (confirm('Supprimer ce travail graphique ?')) {
+            router.delete(`/graphic-works/${id}`);
         }
     }
 
@@ -183,6 +230,14 @@ export default function AccountingIndex({ weekStart, weekEnd, weekLabel, prevWee
                     />
                 </div>
 
+                {/* Travaux graphiques */}
+                <GraphicWorksSection
+                    weekStart={weekStart}
+                    graphicWorks={graphicWorks}
+                    graphistes={graphistes}
+                    onDelete={deleteGraphicWork}
+                />
+
                 {/* Revenue section */}
                 <AccountingSection
                     type="revenue"
@@ -220,7 +275,7 @@ export default function AccountingIndex({ weekStart, weekEnd, weekLabel, prevWee
                             label: 'Prestataires (automatique)',
                             amount: auto.contractor_costs,
                             details: auto.contractor_details.map((d) => ({
-                                name: `${d.name} — ${d.role} (×${d.releases_count} son${d.releases_count > 1 ? 's' : ''})`,
+                                name: buildContractorLabel(d),
                                 amount: d.amount,
                             })),
                         },
@@ -242,6 +297,168 @@ export default function AccountingIndex({ weekStart, weekEnd, weekLabel, prevWee
     );
 }
 
+/* ─── Travaux graphiques ─── */
+function GraphicWorksSection({ weekStart, graphicWorks, graphistes, onDelete }: {
+    weekStart: string;
+    graphicWorks: GraphicWork[];
+    graphistes: Graphiste[];
+    onDelete: (id: number) => void;
+}) {
+    const [isAdding, setIsAdding] = useState(false);
+    const weeklyTotal = graphicWorks.reduce((s, gw) => s + gw.total, 0);
+
+    const { data, setData, post, processing, errors, reset } = useForm({
+        week_start: weekStart,
+        employee_id: '',
+        work_type: 'cover' as 'cover' | 'affiche',
+        quantity: '1',
+        notes: '',
+    });
+
+    const submit: FormEventHandler = (e) => {
+        e.preventDefault();
+        post('/graphic-works', {
+            onSuccess: () => {
+                reset('employee_id', 'quantity', 'notes');
+                setIsAdding(false);
+            },
+        });
+    };
+
+    const costPreview = data.quantity ? Number(data.quantity) * (GRAPHIC_PRICES[data.work_type] ?? 0) : 0;
+
+    return (
+        <div className="rounded-xl border border-purple-500/20 bg-purple-500/5">
+            <div className="flex items-center justify-between border-b border-white/5 px-5 py-4">
+                <div className="flex items-center gap-3">
+                    <Image className="h-4 w-4 text-purple-400" />
+                    <h2 className="font-semibold text-purple-400">Travaux graphiques</h2>
+                    <span className="text-muted-foreground text-xs">covers $3 000 · affiches $5 000</span>
+                </div>
+                <div className="flex items-center gap-3">
+                    {weeklyTotal > 0 && (
+                        <span className="text-sm font-bold">{formatMoney(weeklyTotal)}</span>
+                    )}
+                    <Button
+                        size="sm"
+                        variant={isAdding ? 'secondary' : 'outline'}
+                        onClick={() => setIsAdding((v) => !v)}
+                    >
+                        {isAdding ? 'Fermer' : '+ Ajouter'}
+                    </Button>
+                </div>
+            </div>
+
+            {/* Liste */}
+            {graphicWorks.length > 0 && (
+                <div className="px-5 py-2">
+                    {graphicWorks.map((gw) => (
+                        <div key={gw.id} className="flex items-center justify-between border-b border-white/5 py-2.5 last:border-0">
+                            <div className="flex min-w-0 items-center gap-3">
+                                <Badge variant="outline" className={gw.work_type === 'cover' ? 'text-purple-400 border-purple-400/40' : 'text-pink-400 border-pink-400/40'}>
+                                    {GRAPHIC_LABELS[gw.work_type]}
+                                </Badge>
+                                <div className="min-w-0">
+                                    <p className="truncate text-sm font-medium">
+                                        {gw.employee_name} — ×{gw.quantity}
+                                    </p>
+                                    {gw.notes && <p className="text-muted-foreground truncate text-xs">{gw.notes}</p>}
+                                    <p className="text-muted-foreground text-[10px]">{gw.recorded_by} · {gw.created_at}</p>
+                                </div>
+                            </div>
+                            <div className="ml-3 flex shrink-0 items-center gap-3">
+                                <span className="font-semibold">{formatMoney(gw.total)}</span>
+                                <Button variant="ghost" size="icon" onClick={() => onDelete(gw.id)}>
+                                    <Trash2 className="h-3.5 w-3.5 text-red-400" />
+                                </Button>
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            )}
+
+            {graphicWorks.length === 0 && !isAdding && (
+                <p className="text-muted-foreground px-5 py-4 text-sm">Aucun travail graphique cette semaine.</p>
+            )}
+
+            {/* Formulaire d'ajout */}
+            {isAdding && (
+                <div className="border-t border-white/5 px-5 py-4">
+                    <form onSubmit={submit} className="grid gap-3">
+                        <div className="flex flex-wrap items-end gap-3">
+                            <div className="grid gap-1.5">
+                                <Label className="text-xs">Graphiste *</Label>
+                                <Select value={data.employee_id} onValueChange={(v) => setData('employee_id', v)}>
+                                    <SelectTrigger className="h-8 w-48 text-xs">
+                                        <SelectValue placeholder="Choisir..." />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        {graphistes.map((g) => (
+                                            <SelectItem key={g.id} value={g.id.toString()} className="text-xs">
+                                                {g.name} <span className="text-muted-foreground">({g.role})</span>
+                                            </SelectItem>
+                                        ))}
+                                    </SelectContent>
+                                </Select>
+                                <InputError message={errors.employee_id} />
+                            </div>
+
+                            <div className="grid gap-1.5">
+                                <Label className="text-xs">Type *</Label>
+                                <Select value={data.work_type} onValueChange={(v) => setData('work_type', v as 'cover' | 'affiche')}>
+                                    <SelectTrigger className="h-8 w-44 text-xs">
+                                        <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value="cover" className="text-xs">Cover — $3 000 / pièce</SelectItem>
+                                        <SelectItem value="affiche" className="text-xs">Affiche — $5 000 / pièce</SelectItem>
+                                    </SelectContent>
+                                </Select>
+                                <InputError message={errors.work_type} />
+                            </div>
+
+                            <div className="grid gap-1.5">
+                                <Label className="text-xs">Quantité *</Label>
+                                <Input
+                                    type="number"
+                                    min={1}
+                                    className="h-8 w-24 text-xs"
+                                    value={data.quantity}
+                                    onChange={(e) => setData('quantity', e.target.value)}
+                                />
+                                <InputError message={errors.quantity} />
+                            </div>
+
+                            <div className="grid flex-1 gap-1.5">
+                                <Label className="text-xs">Notes</Label>
+                                <Input
+                                    className="h-8 text-xs"
+                                    placeholder="Optionnel..."
+                                    value={data.notes}
+                                    onChange={(e) => setData('notes', e.target.value)}
+                                />
+                            </div>
+                        </div>
+
+                        {costPreview > 0 && (
+                            <p className="text-muted-foreground text-xs">
+                                Coût : ×{data.quantity} × {formatMoney(GRAPHIC_PRICES[data.work_type])} = <strong className="text-foreground">{formatMoney(costPreview)}</strong>
+                            </p>
+                        )}
+
+                        <div>
+                            <Button type="submit" size="sm" disabled={processing}>
+                                {processing && <LoaderCircle className="mr-1.5 h-3.5 w-3.5 animate-spin" />}
+                                Enregistrer
+                            </Button>
+                        </div>
+                    </form>
+                </div>
+            )}
+        </div>
+    );
+}
+
 /* ─── Summary card ─── */
 function SummaryCard({ label, value, sub, color, highlight }: {
     label: string; value: string; sub?: string; color: 'emerald' | 'red' | 'orange'; highlight?: boolean;
@@ -260,7 +477,7 @@ function SummaryCard({ label, value, sub, color, highlight }: {
     );
 }
 
-/* ─── Section (revenue / deductible / non-deductible) ─── */
+/* ─── Section comptable (revenus / dépenses) ─── */
 function AccountingSection({ type, entries, categories, weekStart, onDelete, activeForm, setActiveForm, autoLines }: {
     type: EntryType;
     entries: Entry[];
@@ -300,7 +517,7 @@ function AccountingSection({ type, entries, categories, weekStart, onDelete, act
                 </div>
             </div>
 
-            {/* Auto lines with optional expandable details */}
+            {/* Lignes automatiques avec détail dépliable */}
             {autoLines && autoLines.some((l) => l.amount > 0) && (
                 <div className="px-5 pt-3">
                     {autoLines.filter((l) => l.amount > 0).map((line) => (
@@ -309,7 +526,7 @@ function AccountingSection({ type, entries, categories, weekStart, onDelete, act
                 </div>
             )}
 
-            {/* Manual entries */}
+            {/* Entrées manuelles */}
             {entries.length > 0 && (
                 <div className="px-5 pb-2 pt-1">
                     {entries.map((entry) => (
@@ -339,7 +556,7 @@ function AccountingSection({ type, entries, categories, weekStart, onDelete, act
                 <p className="text-muted-foreground px-5 py-4 text-sm">Aucune entrée cette semaine.</p>
             )}
 
-            {/* Add form */}
+            {/* Formulaire d'ajout */}
             {isOpen && (
                 <div className="border-t border-white/5 px-5 py-4">
                     <AddEntryForm type={type} categories={categories} weekStart={weekStart} onSuccess={() => setActiveForm(null)} />
@@ -349,7 +566,7 @@ function AccountingSection({ type, entries, categories, weekStart, onDelete, act
     );
 }
 
-/* ─── Auto line with expandable details ─── */
+/* ─── Ligne auto dépliable ─── */
 function AutoLineRow({ line }: { line: AutoLine }) {
     const [expanded, setExpanded] = useState(false);
     const hasDetails = line.details && line.details.length > 0;
@@ -359,7 +576,7 @@ function AutoLineRow({ line }: { line: AutoLine }) {
             <div className="flex items-center justify-between py-2 text-sm">
                 <button
                     type="button"
-                    className={`flex items-center gap-1 text-left ${hasDetails ? 'cursor-pointer hover:text-foreground' : 'cursor-default'} text-muted-foreground italic`}
+                    className={`flex items-center gap-1 text-left italic ${hasDetails ? 'cursor-pointer hover:text-foreground' : 'cursor-default'} text-muted-foreground`}
                     onClick={() => hasDetails && setExpanded((v) => !v)}
                 >
                     {hasDetails && (
@@ -384,7 +601,7 @@ function AutoLineRow({ line }: { line: AutoLine }) {
     );
 }
 
-/* ─── Add entry form ─── */
+/* ─── Formulaire ajout entrée manuelle ─── */
 function AddEntryForm({ type, categories, weekStart, onSuccess }: {
     type: EntryType;
     categories: Record<string, string>;
