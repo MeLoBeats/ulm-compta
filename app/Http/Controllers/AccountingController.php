@@ -34,7 +34,7 @@ class AccountingController extends Controller
             ->sum('quantity') * 700;
 
         // Frais prestataires : releases de la semaine + travaux graphiques, cap $45k/prestataire
-        $contractorDetails = $this->computeContractorDetails($from);
+        $contractorDetails = $this->computeContractorDetails($from, $to);
         $contractorCosts = (float) array_sum(array_column($contractorDetails, 'amount'));
 
         // Salaires employés actifs (somme fixe hebdo, toutes semaines)
@@ -137,13 +137,14 @@ class AccountingController extends Controller
      * Calcule les frais prestataires de la semaine :
      * releases sorties + travaux graphiques, avec cap $45k par prestataire.
      */
-    private function computeContractorDetails(string $weekMonday): array
+    private function computeContractorDetails(string $from, string $to): array
     {
         $employeeData = [];
 
-        // 1) Fees des releases sorties cette semaine
+        // 1) Fees des releases sorties cette semaine (lundi → dimanche)
         $releases = Release::with(['contractors.position'])
-            ->whereDate('release_date', $weekMonday)
+            ->whereDate('release_date', '>=', $from)
+            ->whereDate('release_date', '<=', $to)
             ->get();
 
         foreach ($releases->flatMap(fn ($r) => $r->contractors) as $contractor) {
@@ -162,8 +163,8 @@ class AccountingController extends Controller
             $employeeData[$id]['raw'] += (float) $contractor->fee_per_release;
         }
 
-        // 2) Travaux graphiques de la semaine
-        $graphicWorks = GraphicWork::whereDate('week_start', $weekMonday)
+        // 2) Travaux graphiques de la semaine (week_start = lundi de la semaine)
+        $graphicWorks = GraphicWork::whereDate('week_start', $from)
             ->with('employee.position')
             ->get();
 

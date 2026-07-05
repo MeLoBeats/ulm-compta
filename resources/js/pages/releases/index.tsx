@@ -34,6 +34,19 @@ interface Filters {
     artist: string;
     type: string;
     week: string;
+    release_week: string;
+    release_year: string;
+}
+
+function isoWeekRange(week: number, year: number): string {
+    const jan4 = new Date(year, 0, 4);
+    const dow = (jan4.getDay() + 6) % 7;
+    const monday = new Date(jan4);
+    monday.setDate(jan4.getDate() - dow + (week - 1) * 7);
+    const sunday = new Date(monday);
+    sunday.setDate(monday.getDate() + 6);
+    const fmt = (d: Date) => d.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' });
+    return `${fmt(monday)} – ${fmt(sunday)}`;
 }
 
 interface Props {
@@ -51,22 +64,48 @@ export default function ReleasesIndex({ releases, filters }: Props) {
     const [artistInput, setArtistInput] = useState(filters.artist);
     const [typeInput, setTypeInput] = useState(filters.type || 'all');
     const [weekInput, setWeekInput] = useState(filters.week);
+    const [releaseWeekInput, setReleaseWeekInput] = useState(filters.release_week);
+    const [releaseYearInput, setReleaseYearInput] = useState(filters.release_year || String(new Date().getFullYear()));
 
-    const hasFilters = filters.artist || (filters.type && filters.type !== 'all') || filters.week;
+    const hasFilters =
+        filters.artist || (filters.type && filters.type !== 'all') || filters.week || filters.release_week;
 
-    function applyWithValues(overrides: Partial<{ sort: string; direction: string; artist: string; type: string; week: string }> = {}) {
+    const releaseWeekNum = parseInt(releaseWeekInput);
+    const releaseYearNum = parseInt(releaseYearInput);
+    const releaseWeekHint =
+        releaseWeekInput && !isNaN(releaseWeekNum) && releaseWeekNum >= 1 && releaseWeekNum <= 53
+            ? isoWeekRange(releaseWeekNum, isNaN(releaseYearNum) ? new Date().getFullYear() : releaseYearNum)
+            : null;
+
+    function applyWithValues(
+        overrides: Partial<{
+            sort: string;
+            direction: string;
+            artist: string;
+            type: string;
+            week: string;
+            release_week: string;
+            release_year: string;
+        }> = {},
+    ) {
         const merged = {
             sort: filters.sort,
             direction: filters.direction,
             artist: artistInput,
             type: typeInput === 'all' ? '' : typeInput,
             week: weekInput,
+            release_week: releaseWeekInput,
+            release_year: releaseYearInput,
             ...overrides,
         };
         const params: Record<string, string> = {};
         if (merged.artist) params.artist = merged.artist;
         if (merged.type && merged.type !== 'all') params.type = merged.type;
         if (merged.week) params.week = merged.week;
+        if (merged.release_week) {
+            params.release_week = merged.release_week;
+            params.release_year = merged.release_year;
+        }
         if (merged.sort !== 'release_date' || merged.direction !== 'desc') {
             params.sort = merged.sort;
             params.direction = merged.direction;
@@ -83,6 +122,8 @@ export default function ReleasesIndex({ releases, filters }: Props) {
         setArtistInput('');
         setTypeInput('all');
         setWeekInput('');
+        setReleaseWeekInput('');
+        setReleaseYearInput(String(new Date().getFullYear()));
         router.get('/releases');
     }
 
@@ -159,6 +200,37 @@ export default function ReleasesIndex({ releases, filters }: Props) {
                             }}
                             className="h-8 w-40 text-sm"
                         />
+                    </div>
+
+                    <div className="grid gap-1">
+                        <label className="text-muted-foreground text-xs">
+                            Semaine de sortie
+                            {releaseWeekHint && (
+                                <span className="text-muted-foreground/70 ml-1">({releaseWeekHint})</span>
+                            )}
+                        </label>
+                        <div className="flex gap-1">
+                            <Input
+                                type="number"
+                                min={1}
+                                max={53}
+                                value={releaseWeekInput}
+                                onChange={(e) => setReleaseWeekInput(e.target.value)}
+                                onKeyDown={(e) => e.key === 'Enter' && applyWithValues()}
+                                placeholder="N° sem."
+                                className="h-8 w-20 text-sm"
+                            />
+                            <Input
+                                type="number"
+                                min={2020}
+                                max={2099}
+                                value={releaseYearInput}
+                                onChange={(e) => setReleaseYearInput(e.target.value)}
+                                onKeyDown={(e) => e.key === 'Enter' && applyWithValues()}
+                                placeholder="Année"
+                                className="h-8 w-20 text-sm"
+                            />
+                        </div>
                     </div>
 
                     <Button size="sm" onClick={() => applyWithValues()}>

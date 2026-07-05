@@ -26,7 +26,9 @@ class ReleaseController extends Controller
         $direction = $request->input('direction') === 'asc' ? 'asc' : 'desc';
         $artistFilter = $request->input('artist');
         $typeFilter = $request->input('type');
-        $weekFilter = $request->input('week');
+        $salesWeekFilter = $request->input('week');
+        $releaseWeekNum = $request->integer('release_week');
+        $releaseWeekYear = $request->integer('release_year', (int) now()->format('Y'));
 
         $query = Release::with(['artists', 'label'])->withSum('sales', 'quantity');
 
@@ -38,13 +40,22 @@ class ReleaseController extends Controller
             $query->where('type', $typeFilter);
         }
 
-        if ($weekFilter) {
-            $weekStart = Carbon::parse($weekFilter)->startOfWeek(Carbon::MONDAY)->toDateString();
-            $weekEnd = Carbon::parse($weekFilter)->endOfWeek(Carbon::SUNDAY)->toDateString();
+        // Filtre par semaine de ventes
+        if ($salesWeekFilter) {
+            $weekStart = Carbon::parse($salesWeekFilter)->startOfWeek(Carbon::MONDAY)->toDateString();
+            $weekEnd = Carbon::parse($salesWeekFilter)->endOfWeek(Carbon::SUNDAY)->toDateString();
             $query->whereHas('sales', fn ($q) => $q
                 ->whereDate('sale_date', '>=', $weekStart)
                 ->whereDate('sale_date', '<=', $weekEnd)
             );
+        }
+
+        // Filtre par numéro de semaine ISO de la date de sortie
+        if ($releaseWeekNum >= 1 && $releaseWeekNum <= 53) {
+            $releaseWeekStart = Carbon::now()->setISODate($releaseWeekYear, $releaseWeekNum, 1)->toDateString();
+            $releaseWeekEnd = Carbon::now()->setISODate($releaseWeekYear, $releaseWeekNum, 7)->toDateString();
+            $query->whereDate('release_date', '>=', $releaseWeekStart)
+                ->whereDate('release_date', '<=', $releaseWeekEnd);
         }
 
         $releases = $query->get()->map(fn (Release $release) => [
@@ -75,7 +86,9 @@ class ReleaseController extends Controller
                 'direction' => $direction,
                 'artist' => $artistFilter ?? '',
                 'type' => $typeFilter ?? '',
-                'week' => $weekFilter ?? '',
+                'week' => $salesWeekFilter ?? '',
+                'release_week' => $releaseWeekNum > 0 ? (string) $releaseWeekNum : '',
+                'release_year' => (string) $releaseWeekYear,
             ],
         ]);
     }
