@@ -133,6 +133,7 @@ class AccountingController extends Controller
             ->withSum(['sales as weekly_quantity' => fn ($q) => $q->whereDate('sale_date', '>=', $from)->whereDate('sale_date', '<=', $to)], 'quantity')
             ->get();
 
+        // Accumulate raw (uncapped) weekly share per artist across all releases
         $artistTotals = [];
 
         foreach ($releases as $release) {
@@ -145,18 +146,22 @@ class AccountingController extends Controller
             $grossPerArtist = $weeklyGross / $release->artists->count();
 
             foreach ($release->artists as $artist) {
-                $split = $artist->calculateRevenueSplit($grossPerArtist);
+                $rawShare = $grossPerArtist * ($artist->contract_type->artistPercentage() / 100);
                 $key = $artist->id;
 
                 if (! isset($artistTotals[$key])) {
-                    $artistTotals[$key] = ['name' => $artist->name, 'amount' => 0.0];
+                    $artistTotals[$key] = ['name' => $artist->name, 'raw' => 0.0];
                 }
 
-                $artistTotals[$key]['amount'] += $split['artist'];
+                $artistTotals[$key]['raw'] += $rawShare;
             }
         }
 
-        return array_values($artistTotals);
+        // Apply $45k weekly cap once, after accumulating all releases
+        return array_values(array_map(fn ($a) => [
+            'name' => $a['name'],
+            'amount' => min($a['raw'], 45000.0),
+        ], $artistTotals));
     }
 
     public function store(Request $request): RedirectResponse
