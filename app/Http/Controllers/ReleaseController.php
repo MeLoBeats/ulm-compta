@@ -8,34 +8,75 @@ use App\Models\Employee;
 use App\Models\Label;
 use App\Models\Release;
 use App\Models\Sale;
+use Carbon\Carbon;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Storage;
 use Inertia\Inertia;
 use Inertia\Response;
 
 class ReleaseController extends Controller
 {
-    public function index(): Response
+    public function index(Request $request): Response
     {
+        $sort = in_array($request->input('sort'), ['title', 'release_date', 'total_sales'])
+            ? $request->input('sort')
+            : 'release_date';
+        $direction = $request->input('direction') === 'asc' ? 'asc' : 'desc';
+        $artistFilter = $request->input('artist');
+        $typeFilter = $request->input('type');
+        $weekFilter = $request->input('week');
+
+        $query = Release::with(['artists', 'label'])->withSum('sales', 'quantity');
+
+        if ($artistFilter) {
+            $query->whereHas('artists', fn ($q) => $q->where('name', 'like', "%{$artistFilter}%"));
+        }
+
+        if ($typeFilter && in_array($typeFilter, ['Single', 'EP', 'Album'])) {
+            $query->where('type', $typeFilter);
+        }
+
+        if ($weekFilter) {
+            $weekStart = Carbon::parse($weekFilter)->startOfWeek(Carbon::MONDAY)->toDateString();
+            $weekEnd = Carbon::parse($weekFilter)->endOfWeek(Carbon::SUNDAY)->toDateString();
+            $query->whereHas('sales', fn ($q) => $q
+                ->whereDate('sale_date', '>=', $weekStart)
+                ->whereDate('sale_date', '<=', $weekEnd)
+            );
+        }
+
+        $releases = $query->get()->map(fn (Release $release) => [
+            'id' => $release->id,
+            'title' => $release->title,
+            'type' => $release->type,
+            'release_date' => $release->release_date->format('d/m/Y'),
+            'release_date_raw' => $release->release_date->format('Y-m-d'),
+            'label' => $release->label?->name ?? 'ULM Records',
+            'artists' => $release->artists->pluck('name'),
+            'total_sales' => (int) ($release->sales_sum_quantity ?? 0),
+            'gross_revenue' => (int) ($release->sales_sum_quantity ?? 0) * 700,
+            'genre' => $release->genre,
+            'streaming_url' => $release->streaming_url,
+            'cover_path' => $release->cover_path,
+        ]);
+
+        $releases = match ($sort) {
+            'title' => $direction === 'asc' ? $releases->sortBy('title') : $releases->sortByDesc('title'),
+            'total_sales' => $direction === 'asc' ? $releases->sortBy('total_sales') : $releases->sortByDesc('total_sales'),
+            default => $direction === 'asc' ? $releases->sortBy('release_date_raw') : $releases->sortByDesc('release_date_raw'),
+        };
+
         return Inertia::render('releases/index', [
-            'releases' => Release::with(['artists', 'label'])
-                ->withSum('sales', 'quantity')
-                ->latest('release_date')
-                ->get()
-                ->map(fn (Release $release) => [
-                    'id' => $release->id,
-                    'title' => $release->title,
-                    'type' => $release->type,
-                    'release_date' => $release->release_date->format('d/m/Y'),
-                    'label' => $release->label?->name ?? 'ULM Records',
-                    'artists' => $release->artists->pluck('name'),
-                    'total_sales' => $release->sales_sum_quantity ?? 0,
-                    'gross_revenue' => ($release->sales_sum_quantity ?? 0) * 700,
-                    'genre' => $release->genre,
-                    'streaming_url' => $release->streaming_url,
-                    'cover_path' => $release->cover_path,
-                ]),
+            'releases' => $releases->values(),
+            'filters' => [
+                'sort' => $sort,
+                'direction' => $direction,
+                'artist' => $artistFilter ?? '',
+                'type' => $typeFilter ?? '',
+                'week' => $weekFilter ?? '',
+            ],
         ]);
     }
 
@@ -203,9 +244,9 @@ class ReleaseController extends Controller
     }
 
     /**
-     * @return \Illuminate\Support\Collection<int, array{id: int, name: string, role: string, fee_per_release: float|null}>
+     * @return Collection<int, array{id: int, name: string, role: string, fee_per_release: float|null}>
      */
-    private function contractorsList(): \Illuminate\Support\Collection
+    private function contractorsList(): Collection
     {
         return Employee::with('position')
             ->whereHas('position', fn ($q) => $q->where('is_contractor', true))

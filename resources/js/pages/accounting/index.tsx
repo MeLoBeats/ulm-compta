@@ -1,7 +1,7 @@
 import AppLayout from '@/layouts/app-layout';
 import { type BreadcrumbItem } from '@/types';
 import { Head, Link, router, useForm, usePage } from '@inertiajs/react';
-import { ChevronLeft, ChevronRight, LoaderCircle, Trash2, TrendingDown, TrendingUp } from 'lucide-react';
+import { ChevronLeft, ChevronRight, ChevronDown, LoaderCircle, Trash2, TrendingDown, TrendingUp } from 'lucide-react';
 import { FormEventHandler, useState } from 'react';
 import InputError from '@/components/input-error';
 import { Button } from '@/components/ui/button';
@@ -26,11 +26,20 @@ interface Entry {
     created_at: string;
 }
 
+interface PaymentDetail {
+    name: string;
+    amount: number;
+    role?: string;
+    releases_count?: number;
+}
+
 interface Auto {
     sales_revenue: number;
-    contractor_costs: number;
     employee_salaries: number;
     artist_payments: number;
+    artist_payment_details: PaymentDetail[];
+    contractor_costs: number;
+    contractor_details: Array<PaymentDetail & { role: string; releases_count: number }>;
 }
 
 interface Totals {
@@ -85,6 +94,12 @@ const SECTION_CONFIG = {
 } as const;
 
 type EntryType = keyof typeof SECTION_CONFIG;
+
+interface AutoLine {
+    label: string;
+    amount: number;
+    details?: Array<{ name: string; amount: number }>;
+}
 
 function formatMoney(amount: number) {
     return new Intl.NumberFormat('fr-FR', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(amount);
@@ -192,9 +207,23 @@ export default function AccountingIndex({ weekStart, weekEnd, weekLabel, prevWee
                     activeForm={activeForm}
                     setActiveForm={setActiveForm}
                     autoLines={[
-                        { label: 'Salaires employés (automatique)', amount: auto.employee_salaries },
-                        { label: 'Paiements artistes (automatique)', amount: auto.artist_payments },
-                        { label: 'Prestataires (automatique)', amount: auto.contractor_costs },
+                        {
+                            label: 'Salaires employés (automatique)',
+                            amount: auto.employee_salaries,
+                        },
+                        {
+                            label: 'Paiements artistes (automatique)',
+                            amount: auto.artist_payments,
+                            details: auto.artist_payment_details,
+                        },
+                        {
+                            label: 'Prestataires (automatique)',
+                            amount: auto.contractor_costs,
+                            details: auto.contractor_details.map((d) => ({
+                                name: `${d.name} — ${d.role} (×${d.releases_count} son${d.releases_count > 1 ? 's' : ''})`,
+                                amount: d.amount,
+                            })),
+                        },
                     ]}
                 />
 
@@ -240,11 +269,12 @@ function AccountingSection({ type, entries, categories, weekStart, onDelete, act
     onDelete: (id: number) => void;
     activeForm: EntryType | null;
     setActiveForm: (t: EntryType | null) => void;
-    autoLines?: { label: string; amount: number }[];
+    autoLines?: AutoLine[];
 }) {
     const config = SECTION_CONFIG[type];
     const isOpen = activeForm === type;
-    const total = (autoLines?.reduce((s, l) => s + l.amount, 0) ?? 0) + entries.reduce((s, e) => s + e.amount, 0);
+    const autoTotal = autoLines?.reduce((s, l) => s + l.amount, 0) ?? 0;
+    const total = autoTotal + entries.reduce((s, e) => s + e.amount, 0);
     const isExpense = type !== 'revenue';
 
     return (
@@ -270,14 +300,11 @@ function AccountingSection({ type, entries, categories, weekStart, onDelete, act
                 </div>
             </div>
 
-            {/* Auto lines */}
+            {/* Auto lines with optional expandable details */}
             {autoLines && autoLines.some((l) => l.amount > 0) && (
                 <div className="px-5 pt-3">
                     {autoLines.filter((l) => l.amount > 0).map((line) => (
-                        <div key={line.label} className="flex items-center justify-between py-2 text-sm">
-                            <span className="text-muted-foreground italic">{line.label}</span>
-                            <span className="font-medium">{formatMoney(line.amount)}</span>
-                        </div>
+                        <AutoLineRow key={line.label} line={line} />
                     ))}
                 </div>
             )}
@@ -287,7 +314,7 @@ function AccountingSection({ type, entries, categories, weekStart, onDelete, act
                 <div className="px-5 pb-2 pt-1">
                     {entries.map((entry) => (
                         <div key={entry.id} className="flex items-center justify-between border-b border-white/5 py-2.5 last:border-0">
-                            <div className="flex items-center gap-3 min-w-0">
+                            <div className="flex min-w-0 items-center gap-3">
                                 <span className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium ${config.badge}`}>
                                     {entry.category_label}
                                 </span>
@@ -297,7 +324,7 @@ function AccountingSection({ type, entries, categories, weekStart, onDelete, act
                                     <p className="text-muted-foreground text-[10px]">{entry.recorded_by} · {entry.created_at}</p>
                                 </div>
                             </div>
-                            <div className="flex items-center gap-3 shrink-0 ml-3">
+                            <div className="ml-3 flex shrink-0 items-center gap-3">
                                 <span className="font-semibold">{formatMoney(entry.amount)}</span>
                                 <Button variant="ghost" size="icon" onClick={() => onDelete(entry.id)}>
                                     <Trash2 className="h-3.5 w-3.5 text-red-400" />
@@ -316,6 +343,41 @@ function AccountingSection({ type, entries, categories, weekStart, onDelete, act
             {isOpen && (
                 <div className="border-t border-white/5 px-5 py-4">
                     <AddEntryForm type={type} categories={categories} weekStart={weekStart} onSuccess={() => setActiveForm(null)} />
+                </div>
+            )}
+        </div>
+    );
+}
+
+/* ─── Auto line with expandable details ─── */
+function AutoLineRow({ line }: { line: AutoLine }) {
+    const [expanded, setExpanded] = useState(false);
+    const hasDetails = line.details && line.details.length > 0;
+
+    return (
+        <div className="mb-1">
+            <div className="flex items-center justify-between py-2 text-sm">
+                <button
+                    type="button"
+                    className={`flex items-center gap-1 text-left ${hasDetails ? 'cursor-pointer hover:text-foreground' : 'cursor-default'} text-muted-foreground italic`}
+                    onClick={() => hasDetails && setExpanded((v) => !v)}
+                >
+                    {hasDetails && (
+                        <ChevronDown className={`h-3.5 w-3.5 shrink-0 transition-transform ${expanded ? 'rotate-180' : ''}`} />
+                    )}
+                    {line.label}
+                </button>
+                <span className="font-medium">{formatMoney(line.amount)}</span>
+            </div>
+
+            {hasDetails && expanded && (
+                <div className="mb-1 ml-4 border-l border-white/10 pl-3">
+                    {line.details!.map((detail) => (
+                        <div key={detail.name} className="flex items-center justify-between py-1 text-xs">
+                            <span className="text-muted-foreground">{detail.name}</span>
+                            <span className="font-medium">{formatMoney(detail.amount)}</span>
+                        </div>
+                    ))}
                 </div>
             )}
         </div>

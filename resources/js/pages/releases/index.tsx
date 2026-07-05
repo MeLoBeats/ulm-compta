@@ -1,9 +1,12 @@
 import AppLayout from '@/layouts/app-layout';
 import { type BreadcrumbItem } from '@/types';
 import { Head, Link, router, usePage } from '@inertiajs/react';
-import { Eye, Pencil, Plus, Trash2 } from 'lucide-react';
+import { ChevronDown, ChevronUp, Eye, Pencil, Plus, Trash2, X } from 'lucide-react';
+import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { Input } from '@/components/ui/input';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
 const breadcrumbs: BreadcrumbItem[] = [
     { title: 'Dashboard', href: '/dashboard' },
@@ -15,6 +18,7 @@ interface Release {
     title: string;
     type: string;
     release_date: string;
+    release_date_raw: string;
     label: string;
     artists: string[];
     total_sales: number;
@@ -24,16 +28,63 @@ interface Release {
     cover_path: string | null;
 }
 
+interface Filters {
+    sort: string;
+    direction: string;
+    artist: string;
+    type: string;
+    week: string;
+}
+
 interface Props {
     releases: Release[];
+    filters: Filters;
 }
 
 function formatMoney(amount: number) {
     return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(amount);
 }
 
-export default function ReleasesIndex({ releases }: Props) {
+export default function ReleasesIndex({ releases, filters }: Props) {
     const { flash } = usePage<{ flash: { success?: string } }>().props;
+
+    const [artistInput, setArtistInput] = useState(filters.artist);
+    const [typeInput, setTypeInput] = useState(filters.type || 'all');
+    const [weekInput, setWeekInput] = useState(filters.week);
+
+    const hasFilters = filters.artist || (filters.type && filters.type !== 'all') || filters.week;
+
+    function applyWithValues(overrides: Partial<{ sort: string; direction: string; artist: string; type: string; week: string }> = {}) {
+        const merged = {
+            sort: filters.sort,
+            direction: filters.direction,
+            artist: artistInput,
+            type: typeInput === 'all' ? '' : typeInput,
+            week: weekInput,
+            ...overrides,
+        };
+        const params: Record<string, string> = {};
+        if (merged.artist) params.artist = merged.artist;
+        if (merged.type && merged.type !== 'all') params.type = merged.type;
+        if (merged.week) params.week = merged.week;
+        if (merged.sort !== 'release_date' || merged.direction !== 'desc') {
+            params.sort = merged.sort;
+            params.direction = merged.direction;
+        }
+        router.get('/releases', params, { replace: true });
+    }
+
+    function sortBy(column: string) {
+        const newDirection = filters.sort === column && filters.direction === 'desc' ? 'asc' : 'desc';
+        applyWithValues({ sort: column, direction: newDirection });
+    }
+
+    function clearFilters() {
+        setArtistInput('');
+        setTypeInput('all');
+        setWeekInput('');
+        router.get('/releases');
+    }
 
     function destroy(id: number) {
         if (confirm('Supprimer cette sortie et toutes ses ventes ?')) {
@@ -63,16 +114,75 @@ export default function ReleasesIndex({ releases }: Props) {
                     </div>
                 )}
 
+                {/* Filters */}
+                <div className="flex flex-wrap items-end gap-3">
+                    <div className="grid gap-1">
+                        <label className="text-muted-foreground text-xs">Artiste</label>
+                        <Input
+                            value={artistInput}
+                            onChange={(e) => setArtistInput(e.target.value)}
+                            onKeyDown={(e) => e.key === 'Enter' && applyWithValues({ artist: artistInput })}
+                            placeholder="Chercher un artiste..."
+                            className="h-8 w-48 text-sm"
+                        />
+                    </div>
+
+                    <div className="grid gap-1">
+                        <label className="text-muted-foreground text-xs">Type</label>
+                        <Select
+                            value={typeInput}
+                            onValueChange={(v) => {
+                                setTypeInput(v);
+                                applyWithValues({ type: v === 'all' ? '' : v });
+                            }}
+                        >
+                            <SelectTrigger className="h-8 w-28 text-sm">
+                                <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                                <SelectItem value="all">Tous</SelectItem>
+                                <SelectItem value="Single">Single</SelectItem>
+                                <SelectItem value="EP">EP</SelectItem>
+                                <SelectItem value="Album">Album</SelectItem>
+                            </SelectContent>
+                        </Select>
+                    </div>
+
+                    <div className="grid gap-1">
+                        <label className="text-muted-foreground text-xs">Semaine (ventes)</label>
+                        <Input
+                            type="date"
+                            value={weekInput}
+                            onChange={(e) => {
+                                setWeekInput(e.target.value);
+                                applyWithValues({ week: e.target.value });
+                            }}
+                            className="h-8 w-40 text-sm"
+                        />
+                    </div>
+
+                    <Button size="sm" onClick={() => applyWithValues()}>
+                        Filtrer
+                    </Button>
+
+                    {hasFilters && (
+                        <Button size="sm" variant="ghost" onClick={clearFilters}>
+                            <X className="mr-1 h-3.5 w-3.5" /> Effacer
+                        </Button>
+                    )}
+                </div>
+
+                {/* Table */}
                 <div className="rounded-xl border">
                     <table className="w-full text-sm">
                         <thead>
                             <tr className="text-muted-foreground border-b text-left">
-                                <th className="px-4 py-3 font-medium">Titre</th>
+                                <SortHeader column="title" label="Titre" filters={filters} onSort={sortBy} />
                                 <th className="px-4 py-3 font-medium">Type</th>
                                 <th className="px-4 py-3 font-medium">Artiste(s)</th>
                                 <th className="px-4 py-3 font-medium">Label</th>
-                                <th className="px-4 py-3 font-medium">Date</th>
-                                <th className="px-4 py-3 text-right font-medium">Ventes</th>
+                                <SortHeader column="release_date" label="Date" filters={filters} onSort={sortBy} />
+                                <SortHeader column="total_sales" label="Ventes" filters={filters} onSort={sortBy} right />
                                 <th className="px-4 py-3 text-right font-medium">Revenus bruts</th>
                                 <th className="px-4 py-3 font-medium"></th>
                             </tr>
@@ -81,7 +191,7 @@ export default function ReleasesIndex({ releases }: Props) {
                             {releases.length === 0 && (
                                 <tr>
                                     <td colSpan={8} className="text-muted-foreground px-4 py-8 text-center">
-                                        Aucune sortie enregistrée.
+                                        Aucune sortie trouvée.
                                     </td>
                                 </tr>
                             )}
@@ -124,5 +234,40 @@ export default function ReleasesIndex({ releases }: Props) {
                 </div>
             </div>
         </AppLayout>
+    );
+}
+
+function SortHeader({
+    column,
+    label,
+    filters,
+    onSort,
+    right,
+}: {
+    column: string;
+    label: string;
+    filters: Filters;
+    onSort: (col: string) => void;
+    right?: boolean;
+}) {
+    const active = filters.sort === column;
+    return (
+        <th
+            className={`cursor-pointer select-none px-4 py-3 font-medium hover:text-foreground ${right ? 'text-right' : ''}`}
+            onClick={() => onSort(column)}
+        >
+            <span className="inline-flex items-center gap-1">
+                {label}
+                {active ? (
+                    filters.direction === 'asc' ? (
+                        <ChevronUp className="h-3 w-3" />
+                    ) : (
+                        <ChevronDown className="h-3 w-3" />
+                    )
+                ) : (
+                    <ChevronDown className="h-3 w-3 opacity-25" />
+                )}
+            </span>
+        </th>
     );
 }

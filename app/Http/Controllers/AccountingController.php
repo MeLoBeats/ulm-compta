@@ -23,27 +23,30 @@ class AccountingController extends Controller
 
         $weekEnd = $weekStart->copy()->endOfWeek(Carbon::SUNDAY)->endOfDay();
 
+        $from = $weekStart->toDateString();
+        $to = $weekEnd->toDateString();
+
         // Revenus auto : ventes de la semaine × $700
-        $salesRevenue = (float) Sale::whereBetween('sale_date', [$weekStart->toDateString(), $weekEnd->toDateString()])
+        // whereDate extrait uniquement la partie date pour éviter le problème des heures (date cast stocke 'Y-m-d H:i:s')
+        $salesRevenue = (float) Sale::whereDate('sale_date', '>=', $from)
+            ->whereDate('sale_date', '<=', $to)
             ->sum('quantity') * 700;
 
-        // Frais prestataires auto : sorties de la semaine × leur tarif
-        $contractorCosts = (float) Release::with('contractors')
-            ->whereBetween('release_date', [$weekStart->toDateString(), $weekEnd->toDateString()])
-            ->get()
-            ->flatMap(fn ($r) => $r->contractors)
-            ->sum('fee_per_release');
+        // Frais prestataires avec détail par personne
+        $contractorDetails = $this->computeContractorDetails($from, $to);
+        $contractorCosts = (float) array_sum(array_column($contractorDetails, 'amount'));
 
-        // Salaires employés actifs (non-prestataires)
+        // Salaires employés actifs (somme fixe hebdo)
         $employeeSalaries = (float) Employee::where('status', 'active')
             ->whereNotNull('weekly_salary')
             ->sum('weekly_salary');
 
-        // Paiements artistes : revenus des ventes de la semaine × leur % de contrat (avec plafond $45k)
-        $artistPayments = $this->computeArtistPayments($weekStart->toDateString(), $weekEnd->toDateString());
+        // Paiements artistes avec détail par artiste
+        $artistPaymentDetails = $this->computeArtistPaymentDetails($from, $to);
+        $artistPayments = (float) array_sum(array_column($artistPaymentDetails, 'amount'));
 
         // Entrées manuelles de la semaine
-        $entries = AccountingEntry::whereDate('week_start', $weekStart->toDateString())
+        $entries = AccountingEntry::whereDate('week_start', $from)
             ->with('recorder:id,name,username')
             ->orderBy('created_at', 'desc')
             ->get()
@@ -80,7 +83,9 @@ class AccountingController extends Controller
                 'sales_revenue' => $salesRevenue,
                 'employee_salaries' => $employeeSalaries,
                 'artist_payments' => $artistPayments,
+                'artist_payment_details' => $artistPaymentDetails,
                 'contractor_costs' => $contractorCosts,
+                'contractor_details' => $contractorDetails,
             ],
             'entries' => $entries->values(),
             'totals' => [
@@ -98,28 +103,60 @@ class AccountingController extends Controller
         ]);
     }
 
-    private function computeArtistPayments(string $from, string $to): float
+    private function computeContractorDetails(string $from, string $to): array
     {
-        $releases = Release::with(['artists'])
-            ->whereHas('sales', fn ($q) => $q->whereBetween('sale_date', [$from, $to]))
-            ->withSum(['sales as weekly_quantity' => fn ($q) => $q->whereBetween('sale_date', [$from, $to])], 'quantity')
+        $releases = Release::with(['contractors.position'])
+            ->whereDate('release_date', '>=', $from)
+            ->whereDate('release_date', '<=', $to)
             ->get();
 
-        $total = 0.0;
+        return $releases
+            ->flatMap(fn ($r) => $r->contractors)
+            ->groupBy('id')
+            ->map(fn ($group) => [
+                'name' => $group->first()->name,
+                'role' => $group->first()->position?->title ?? '—',
+                'releases_count' => $group->count(),
+                'amount' => min(
+                    $group->count() * (float) $group->first()->fee_per_release,
+                    45000.0
+                ),
+            ])
+            ->values()
+            ->toArray();
+    }
+
+    private function computeArtistPaymentDetails(string $from, string $to): array
+    {
+        $releases = Release::with(['artists'])
+            ->whereHas('sales', fn ($q) => $q->whereDate('sale_date', '>=', $from)->whereDate('sale_date', '<=', $to))
+            ->withSum(['sales as weekly_quantity' => fn ($q) => $q->whereDate('sale_date', '>=', $from)->whereDate('sale_date', '<=', $to)], 'quantity')
+            ->get();
+
+        $artistTotals = [];
 
         foreach ($releases as $release) {
             $weeklyGross = (float) ($release->weekly_quantity ?? 0) * 700;
+
             if ($weeklyGross <= 0 || $release->artists->isEmpty()) {
                 continue;
             }
+
             $grossPerArtist = $weeklyGross / $release->artists->count();
+
             foreach ($release->artists as $artist) {
                 $split = $artist->calculateRevenueSplit($grossPerArtist);
-                $total += $split['artist'];
+                $key = $artist->id;
+
+                if (! isset($artistTotals[$key])) {
+                    $artistTotals[$key] = ['name' => $artist->name, 'amount' => 0.0];
+                }
+
+                $artistTotals[$key]['amount'] += $split['artist'];
             }
         }
 
-        return $total;
+        return array_values($artistTotals);
     }
 
     public function store(Request $request): RedirectResponse
