@@ -1,8 +1,8 @@
 import AppLayout from '@/layouts/app-layout';
 import { type BreadcrumbItem } from '@/types';
 import { Head, Link, useForm, usePage } from '@inertiajs/react';
-import { ExternalLink, LoaderCircle, Pencil, Trash2 } from 'lucide-react';
-import { FormEventHandler } from 'react';
+import { Check, Copy, ExternalLink, LoaderCircle, Pencil, Trash2 } from 'lucide-react';
+import { FormEventHandler, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -130,12 +130,16 @@ export default function ReleaseShow({ release }: Props) {
                 </div>
 
                 {/* Revenue summary */}
+                
                 <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
                     <MoneyCard label="Ventes totales" value={`${release.total_sales} vente(s)`} />
                     <MoneyCard label="Revenus bruts" value={formatMoney(release.gross_revenue)} />
                     <MoneyCard label="Part totale artistes" value={formatMoney(release.total_artist_earnings)} />
                     <MoneyCard label="Part totale label" value={formatMoney(release.total_label_earnings)} highlight />
                 </div>
+
+                {/* Discord message generator */}
+                <DiscordMessageGenerator release={release} />
 
                 {/* Contractors */}
                 {release.contractors.length > 0 && (
@@ -296,6 +300,60 @@ export default function ReleaseShow({ release }: Props) {
                 </div>
             </div>
         </AppLayout>
+    );
+}
+
+function DiscordMessageGenerator({ release }: { release: ReleaseDetail }) {
+    const [copied, setCopied] = useState(false);
+
+    const artistNames = release.artists.map((a) => a.name).join(' & ');
+    const labelPart = release.label.toUpperCase() !== 'ULM RECORDS' ? ` | ${release.label}` : '';
+    const graphistes = release.contractors.filter((c) => c.role === 'Graphiste');
+
+    const lines = [
+        `# 💽LA MAISON DE DISQUE | ULM RECORDS${labelPart}💽`,
+        `📀**${artistNames} son morceau : "${release.title}"**🎧`,
+        '',
+        `📀[ ${artistNames} - ${release.title} | ULM RECORDS ](${release.streaming_url ?? ''})`,
+        ...graphistes.map((g) => `*🎨 ${g.role} : ${g.name}*`),
+        '',
+        `*Pour soutenir ${artistNames} et découvrir ses sons réagissez et achetez le morceau : 💵 *`,
+    ];
+
+    const message = lines.join('\n');
+
+    function copy() {
+        navigator.clipboard.writeText(message).then(() => {
+            setCopied(true);
+            setTimeout(() => setCopied(false), 2000);
+        });
+    }
+
+    return (
+        <div className="rounded-xl border p-5">
+            <div className="mb-4 flex items-center justify-between">
+                <div>
+                    <h2 className="font-semibold">Message Discord</h2>
+                    <p className="text-muted-foreground text-sm">
+                        À copier dans <strong>#ventes</strong>
+                    </p>
+                </div>
+                <Button variant="outline" size="sm" onClick={copy}>
+                    {copied ? (
+                        <>
+                            <Check className="mr-2 h-4 w-4 text-green-500" /> Copié !
+                        </>
+                    ) : (
+                        <>
+                            <Copy className="mr-2 h-4 w-4" /> Copier
+                        </>
+                    )}
+                </Button>
+            </div>
+            <pre className="rounded-lg border bg-muted p-4 text-sm leading-relaxed whitespace-pre-wrap font-mono">
+                {message}
+            </pre>
+        </div>
     );
 }
 
