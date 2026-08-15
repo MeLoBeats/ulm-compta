@@ -334,9 +334,6 @@ function DiscordMessageGenerator({ release }: { release: ReleaseDetail }) {
             <div className="mb-4 flex items-center justify-between">
                 <div>
                     <h2 className="font-semibold">Message Discord</h2>
-                    <p className="text-muted-foreground text-sm">
-                        À copier dans <strong>#ventes</strong>
-                    </p>
                 </div>
                 <Button variant="outline" size="sm" onClick={copy}>
                     {copied ? (
