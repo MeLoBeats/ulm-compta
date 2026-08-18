@@ -312,7 +312,7 @@ function DiscordMessageGenerator({ release }: { release: ReleaseDetail }) {
 
     const lines = [
         `# 💽LA MAISON DE DISQUE | ULM RECORDS${labelPart}💽`,
-        `📀**${artistNames} son morceau : "${release.title}"**🎧`,
+        `📀**${artistNames} balance son morceau : "${release.title}"**🎧`,
         '',
         `📀[ ${artistNames} - ${release.title} | ULM RECORDS ](${release.streaming_url ?? ''})`,
         ...graphistes.map((g) => `*🎨 ${g.role} : ${g.name}*`),
